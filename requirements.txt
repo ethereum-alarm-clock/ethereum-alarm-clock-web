@@ -1,0 +1,35 @@
+# Django
+Django>=1.8.4
+
+# Django Storage
+django-storages==1.1.8
+django-pipeline==1.4.7
+django-s3-folder-storage==0.2
+boto==2.34.0
+
+# REST
+djangorestframework==3.1.1
+
+# Images
+Pillow==2.6.1
+
+# Database
+psycopg2==2.5.4
+
+# Timezone support
+pytz==2014.10
+
+# Configuration
+python-dotenv==0.1.2
+env-excavator==1.2.0
+dj-database-url==0.3.0
+django-cache-url==0.8.0
+
+# Monitoring
+rollbar==0.9.9
+
+# Forms
+django-bootstrap3==5.3.1
+
+# JSON
+django-argonauts==1.0.1
