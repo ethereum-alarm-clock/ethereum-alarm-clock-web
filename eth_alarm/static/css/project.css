@@ -33,4 +33,28 @@
   border-color: #eed3d7;
 }
 
-body { padding-top: 70px; }
+body {
+    padding-top: 54px;
+    background-color: #eee;
+}
+
+div.main-content div.container:first-child {
+    background-color: #fff;
+}
+
+#home-top {
+    background: #000 url("/static/images/home_bg.jpg") no-repeat scroll 0% 0%;
+    color: #eee;
+    height: 450px;
+    margin-bottom: 20px;
+}
+
+#home-top h1 {
+    text-align: center;
+}
+
+div.container {
+    padding-top: 20px;
+    background-color: #fff;
+    text-align: center;
+}

@@ -1,0 +1,49 @@
+{% extends "layout_wide.html" %}
+
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-7">
+            <div class="page-header">
+                <h1>Contract Source Code</h1>
+            </div>
+            <p>The full source code for the Alarm service can be found below.
+            I highly encourage you to compile it and verify that the code for
+            advertised contract address matches the the output of the compiled
+            contract below.</p>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <pre><code class="language-solidity">
+contract Example {
+    bool x;
+    
+    event Foo(address arst, bytes32 tsra);
+
+    function test(address arst, bytes32 tsra, uint) public returns (uint) {
+        /*
+         *   A block comment
+         */
+        if (arst == 3) {
+            arst = 4;
+        }
+        // A comment
+
+        z = "a string";
+
+        y = 'another contract function string';
+
+        while (true) {
+            x = false;
+        }
+
+        arst = 0xa3f5;
+    }
+}
+            </code></pre>
+        </div>
+    </div>
+</div>
+{% endblock %}

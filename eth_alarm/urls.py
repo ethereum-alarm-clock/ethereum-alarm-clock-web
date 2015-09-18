@@ -13,6 +13,10 @@ urlpatterns = patterns(
         r'^$', TemplateView.as_view(template_name='home.html'),
         name="site-index",
     ),
+    url(
+        r'^source/$', TemplateView.as_view(template_name='source.html'),
+        name="source-code",
+    ),
 )
 
 

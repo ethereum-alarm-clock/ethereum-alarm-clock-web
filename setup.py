@@ -1,35 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from pip.download import PipSession
-from pip.req import parse_requirements
-import os
-import sys
-
-
 try:
-    from setuptools import setup
+    from setuptools import setup, find_packages
 except ImportError:
-    from distutils.core import setup
+    from distutils.core import setup, find_packages
 
-import eth_alarm
-version = eth_alarm.__version__
-
-session = PipSession()
-
-requirements = [
-    str(req.req) for req in parse_requirements('requirements.txt', session=session)
-]
 
 setup(
     name='eth_alarm',
-    version=version,
+    version='0.1.0',
     author='',
     author_email='pipermerriam@gmail.com',
     url='https://github.com/pipermerriam/ethereum-alarm-clock-web',
     packages=find_packages(exclude=["tests", "tests.*"]),
     include_package_data=True,
-    install_requires=requirements,
+    install_requires=[
+        # TODO
+    ],
     zip_safe=False,
     license="MIT",
     scripts=['eth_alarm/manage.py'],

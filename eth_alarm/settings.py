@@ -200,6 +200,7 @@ PIPELINE_CSS = {
     'base': {
         'source_filenames': (
             "css/bootstrap.css",
+            "css/prism.css",
             "css/project.css",
         ),
         'output_filename': 'css/base.css',
@@ -211,6 +212,8 @@ PIPELINE_JS = {
         'source_filenames': (
             "js/jquery.js",
             "js/bootstrap.js",
+            "js/prism.js",
+            "js/prism-solidity.js",
             "js/project.js",
         ),
         'output_filename': 'js/base.js',

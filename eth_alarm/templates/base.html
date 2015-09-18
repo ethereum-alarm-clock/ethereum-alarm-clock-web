@@ -4,7 +4,8 @@
     <head>
         <meta charset="UTF-8">
         <title>{% block title %}Ethereum Alarm Clock{% endblock %}</title>
-        <link rel="shortcut icon" href="{% static 'img/favicon.ico' %}" />
+        <link rel="shortcut icon" href="{% static 'images/favicon.ico' %}" type="image/x-icon">
+        <link rel="icon" href="{% static 'images/favicon.ico' %}" type="image/x-icon">
         {% if ROLLBAR_CONFIG %}
             <script type="text/javascript">var _rollbarConfig = {{ ROLLBAR_CONFIG|json }};</script>
             {% javascript 'rollbar' %}
@@ -22,9 +23,12 @@
             <div class="container-fluid">
                 <a class="navbar-brand" href="{% url 'site-index' %}">Ethereum Alarm Clock</a>
                 <ul class="nav navbar-nav">
-                    <li><a href="#home-features">Features</a></li>
+                    <li><a href="{% url 'site-index' %}#home-features">Features</a></li>
                 </ul>
                 <ul class="nav navbar-nav pull-right">
+                    <p class="navbar-text">Address: <code>0x0000000000000000000000000000000000000000</code></p>
+                    <li role="separator" class="divider"></li>
+                    <li><a href="{% url 'source-code' %}">Source</a></li>
                     <li><a href="//docs.ethereum-alarm-clock.com">Documentation</a></li>
                 </ul>
             </div>
@@ -32,6 +36,16 @@
         <div class="main-content">
             {% block content_wrapper %}
             {% endblock content_wrapper %}
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-12">
+                        <hr>
+                        <ul class="list-inline">
+                            <li>Something..</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
 
         {% javascript 'base' %}
