@@ -1,1 +1,1 @@
-web: gunicorn --pythonpath="$PWD/ethereum-alarm-clock-web" wsgi:application
+web: gunicorn eth_alarm.wsgi -c eth_alarm/gunicorn.conf -w 3
