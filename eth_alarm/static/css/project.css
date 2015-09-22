@@ -56,5 +56,12 @@ div.main-content div.container:first-child {
 div.container {
     padding-top: 20px;
     background-color: #fff;
+}
+
+#footer {
     text-align: center;
+}
+
+#home-addresses {
+    font-size: 26px;
 }

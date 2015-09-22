@@ -3,44 +3,1522 @@
 
 {% block content %}
 <div class="row">
-    <div class="col-md-7">
+    <div class="col-md-6 col-md-offset-3">
         <div class="page-header">
-            <h1>Contract Source Code</h1>
+            <h1>Verifying the Source Code</h1>
         </div>
         <p>The full source code for the Alarm service can be found below.
         I highly encourage you to compile it and verify that the code for
         advertised contract address matches the the output of the compiled
         contract below.</p>
+
+        <p>The sha256 of the source is <code>910efe3a4f89c6d1e435b0e5e0a917a3f668b047cd4ef26383c65d2e766eb97a</code></p>
+
+        <p>If you copy/paste the source code below, ensure that the
+        <code>Relay</code> contract starts on line 1, and that the code ends
+        with the final closing brace of the <code>Alarm</code> followed by a
+        newline.</p>
+
+        <p>To verify the compiled code of the contract, you will need to
+        compile the source below with the solc compiler.  You will likely need
+        to use the same version used when deploying the contract,
+        <code>0.1.1-ed7a8a35/Release-Darwin/clang/JIT</code></p>
+
+        <pre><code class="language-bash">$ solc --version
+solc, the solidity compiler commandline interface
+Version: 0.1.1-ed7a8a35/Release-Darwin/clang/JIT</pre></code>
+
+        <p>The source was compiled with the command <code>$ solc --infile
+        source.sol --optimize 1 --optimize-runs 200 --file
+        source-binary.txt</code> where the source code is located in a file
+        named </code>source.sol</code> and the binary output ends up written to
+        a file named </code>source-binary.txt</code></p>
+
+        <p>The sha256 of the full output from the solc compilation is 
+        <code>7beee0cb3c10e25716634eba02ebdb8c2a843914e65796cb4366cbcf040d4f59</code></p>
+        <p>The sha256 of only the Alarm contract binary is
+        <code>af68eec4ad678823c90a1bccdf4ada2dbaf5ea35deded6d191a9e4b3de03e7c1</code></p>
+
+        <p>When you go to verify that the code associated with the contract
+        address matches this code, you will see that the compiled source is
+        much larger than the code returned from the ethereum network.  This is
+        because the compiled code contains the code of two sub-contracts which
+        get deployed, but are not saved as part of the contract code when the
+        contract is created.</p>
+
+        <p>So, to verify the source you check that the bytecode associated with
+        the Alarm service address is contained within your compiled
+        version.</p>
+
+        <p>The sha256 of the contract code returned from the contract address
+        is
+        <code>8b21f178a8d1618f9a67871b78a98a213d8c127043130390a8dd203c147a355d</code>.</p>
     </div>
 </div>
 <div class="row">
     <div class="col-md-12">
-        <pre><code class="language-solidity">
-contract Example {
-    bool x;
-    
-    event Foo(address arst, bytes32 tsra);
+        <h2 id="source-code">Source Code</h2>
+        <pre class="alarm-source-code"><code class="language-solidity">contract Relay {
+        address operator;
 
-    function test(address arst, bytes32 tsra, uint) public returns (uint) {
-        /*
-         *   A block comment
-         */
-        if (arst == 3) {
-            arst = 4;
-        }
-        // A comment
-
-        z = "a string";
-
-        y = 'another contract function string';
-
-        while (true) {
-            x = false;
+        function Relay() {
+                operator = msg.sender;
         }
 
-        arst = 0xa3f5;
-    }
+        function relayCall(address contractAddress, bytes4 abiSignature, bytes data) public returns (bool) {
+                if (msg.sender != operator) {
+                        __throw();
+                }
+                return contractAddress.call(abiSignature, data);
+        }
+
+        function __throw() internal {
+                int[] x;
+                x[1];
+        }
 }
+
+
+contract CallerPoolAlarmAPI {
+        /*
+         *  Abstract contract for the caller pool to be able to access the
+         *  Alarm api.
+         */
+        function getCallGracePeriod(bytes32 callKey) public returns (uint);
+        function getCallTargetBlock(bytes32 callKey) public returns (uint);
+}
+
+
+contract CallerPool {
+        address operator;
+        CallerPoolAlarmAPI alarm;
+
+        function CallerPool() {
+                operator = msg.sender;
+                alarm = CallerPoolAlarmAPI(operator);
+        }
+
+        /*
+         *  Caller bonding
+         */
+        mapping (address => uint) public callerBonds;
+
+        function getMinimumBond() public returns (uint) {
+                return tx.gasprice * block.gaslimit;
+        }
+
+        function _deductFromBond(address callerAddress, uint value) internal {
+                /*
+                 *  deduct funds from a bond value without risk of an
+                 *  underflow.
+                 */
+                if (value > callerBonds[callerAddress]) {
+                        // Prevent Underflow.
+                        __throw();
+                }
+                callerBonds[callerAddress] -= value;
+        }
+
+        function _addToBond(address callerAddress, uint value) internal {
+                /*
+                 *  Add funds to a bond value without risk of an
+                 *  overflow.
+                 */
+                if (callerBonds[callerAddress] + value < callerBonds[callerAddress]) {
+                        // Prevent Overflow
+                        __throw();
+                }
+                callerBonds[callerAddress] += value;
+        }
+
+        function depositBond() public {
+                _addToBond(msg.sender, msg.value);
+        }
+
+        function withdrawBond(uint value) public {
+                /*
+                 *  Only if you are not in either of the current call pools.
+                 */
+                if (isInAnyPool(msg.sender)) {
+                        // Prevent underflow
+                        if (value > callerBonds[msg.sender]) {
+                                __throw();
+                        }
+                        // Don't allow withdrawl if this would drop the bond
+                        // balance below the minimum.
+                        if (callerBonds[msg.sender] - value < getMinimumBond()) {
+                                return;
+                        }
+                }
+                _deductFromBond(msg.sender, value);
+                if (!msg.sender.send(value)) {
+                        // Potentially sending money to a contract that
+                        // has a fallback function.  So instead, try
+                        // tranferring the funds with the call api.
+                        if (!msg.sender.call.gas(msg.gas).value(value)()) {
+                                // Revert the entire transaction.  No
+                                // need to destroy the funds.
+                                __throw();
+                        }
+                }
+        }
+
+        function() {
+                /*
+                 *  Fallback function that allows depositing bond funds just by
+                 *  sending a transaction.
+                 */
+                _addToBond(msg.sender, msg.value);
+        }
+
+        /*
+         *  API used by Alarm service
+         */
+        function getDesignatedCaller(bytes32 callKey, uint targetBlock, uint8 gracePeriod, uint blockNumber) public returns (address) {
+                /*
+                 *  Returns the caller from the current call pool who is
+                 *  designated as the executor of this call.
+                 */
+                if (blockNumber < targetBlock || blockNumber > targetBlock + gracePeriod) {
+                        // blockNumber not within call window.
+                        return 0x0;
+                }
+
+                // Pool used is based on the starting block for the call.  This
+                // allows us to know that the pool cannot change for at least
+                // POOL_FREEZE_NUM_BLOCKS which is kept greater than the max
+                // grace period.
+                uint poolNumber = getPoolKeyForBlock(targetBlock);
+                if (poolNumber == 0) {
+                        // No pool currently in operation.
+                        return 0x0;
+                }
+                var pool = callerPools[poolNumber];
+
+                uint numWindows = gracePeriod / 4;
+                uint blockWindow = (blockNumber - targetBlock) / 4;
+
+                if (blockWindow + 2 > numWindows) {
+                        // We are within the free-for-all period.
+                        return 0x0;
+                }
+
+                uint offset = uint(callKey) % pool.length;
+                return pool[(offset + blockWindow) % pool.length];
+        }
+
+        //event AwardedMissedBlockBonus(address indexed fromCaller, address indexed toCaller, uint indexed poolNumber, bytes32 callKey, uint blockNumber, uint bonusAmount);
+
+        function _doBondBonusTransfer(address fromCaller, address toCaller) internal returns (uint) {
+                uint bonusAmount = getMinimumBond();
+                uint bondBalance = callerBonds[fromCaller];
+
+                // If the bond balance is lower than the award
+                // balance, then adjust the reward amount to
+                // match the bond balance.
+                if (bonusAmount > bondBalance) {
+                        bonusAmount = bondBalance;
+                }
+
+                // Transfer the funds fromCaller => toCaller
+                _deductFromBond(fromCaller, bonusAmount);
+                _addToBond(toCaller, bonusAmount);
+
+                return bonusAmount;
+        }
+
+        function awardMissedBlockBonus(address toCaller, bytes32 callKey, uint targetBlock, uint8 gracePeriod) public {
+                if (msg.sender != operator) {
+                        return;
+                }
+
+                uint poolNumber = getPoolKeyForBlock(targetBlock);
+                var pool = callerPools[poolNumber];
+                uint i;
+                uint bonusAmount;
+                address fromCaller;
+
+                uint numWindows = gracePeriod / 4;
+                uint blockWindow = (block.number - targetBlock) / 4;
+
+                // Check if we are within the free-for-all period.  If so, we
+                // award from all pool members.
+                if (blockWindow + 2 > numWindows) {
+                        for (i = 0; i < pool.length; i++) {
+                                if (pool[i] == toCaller) {
+                                        continue;
+                                }
+                                fromCaller = pool[i];
+                                bonusAmount = _doBondBonusTransfer(fromCaller, toCaller);
+
+                                // Log the bonus was awarded.
+                                //AwardedMissedBlockBonus(fromCaller, toCaller, poolNumber, callKey, block.number, bonusAmount);
+                        }
+                        return;
+                }
+
+                // Special case for single member and empty pools
+                if (pool.length < 2) {
+                        return;
+                }
+
+                // Otherwise the award comes from the previous caller.
+                for (i = 0; i < pool.length; i++) {
+                        // Find where the member is in the pool and
+                        // award from the previous pool members bond.
+                        if (pool[i] == toCaller) {
+                                fromCaller = pool[(i + pool.length - 1) % pool.length];
+
+                                bonusAmount = _doBondBonusTransfer(fromCaller, toCaller);
+
+                                // Log the bonus was awarded.
+                                //AwardedMissedBlockBonus(fromCaller, toCaller, poolNumber, callKey, block.number, bonusAmount);
+
+                                // Remove the caller from the next pool.
+                                if (getNextPoolKey() == 0) {
+                                        // This is the first address to modify the
+                                        // current pool so we need to setup the next
+                                        // pool.
+                                        _initiateNextPool();
+                                }
+                                _removeFromPool(fromCaller, getNextPoolKey());
+                                return;
+                        }
+                }
+        }
+
+        /*
+         *  Caller Pool Management
+         */
+        uint[] public poolHistory;
+        mapping (uint => address[]) callerPools;
+
+        function getPoolKeyForBlock(uint blockNumber) public returns (uint) {
+                if (poolHistory.length == 0) {
+                        return 0;
+                }
+                for (uint i = 0; i < poolHistory.length; i++) {
+                        uint poolStartBlock = poolHistory[poolHistory.length - i - 1];
+                        if (poolStartBlock <= blockNumber) {
+                                return poolStartBlock;
+                        }
+                }
+                return 0;
+        }
+
+        function getActivePoolKey() public returns (uint) {
+                return getPoolKeyForBlock(block.number);
+        }
+
+        function getPoolSize(uint poolKey) returns (uint) {
+                return callerPools[poolKey].length;
+        }
+
+        function getNextPoolKey() public returns (uint) {
+                if (poolHistory.length == 0) {
+                        return 0;
+                }
+                uint latestPool = poolHistory[poolHistory.length - 1];
+                if (latestPool > block.number) {
+                        return latestPool;
+                }
+                return 0;
+        }
+
+        function isInAnyPool(address callerAddress) public returns (bool) {
+                /*
+                 *  Returns boolean whether the `callerAddress` is in either
+                 *  the current active pool or the next pool.
+                 */
+                return isInPool(msg.sender, getActivePoolKey()) || isInPool(msg.sender, getNextPoolKey());
+        }
+
+        function isInPool(address callerAddress, uint poolNumber) public returns (bool) {
+                /*
+                 *  Returns boolean whether the `callerAddress` is in the
+                 *  poolNumber.
+                 */
+                if (poolNumber == 0 ) {
+                        // Nobody can be in pool 0
+                        return false;
+                }
+
+                var pool = callerPools[poolNumber];
+
+                // Nobody is in the pool.
+                if (pool.length == 0) {
+                        return false;
+                }
+
+                for (uint i = 0; i < pool.length; i++) {
+                        // Address is in the pool and thus is allowed to exit.
+                        if (pool[i] == callerAddress) {
+                                return true;
+                        }
+                }
+
+                return false;
+        }
+
+        // Ten minutes into the future.
+        uint constant POOL_FREEZE_NUM_BLOCKS = 256;
+        //uint constant POOL_FREEZE_NUM_BLOCKS = 40;
+
+        function getPoolFreezeDuration() public returns (uint) {
+                return POOL_FREEZE_NUM_BLOCKS;
+        }
+
+        function getPoolMinimumLength() public returns (uint) {
+                return 2 * POOL_FREEZE_NUM_BLOCKS;
+        }
+
+        function canEnterPool(address callerAddress) public returns (bool) {
+                /*
+                 *  Returns boolean whether `callerAddress` is allowed to enter
+                 *  the next pool (which may or may not already have been
+                 *  created.
+                 */
+                // Not allowed to join if you are in either the current
+                // active pool or the next pool.
+                if (isInAnyPool(callerAddress)) {
+                        return false;
+                }
+
+                // Next pool begins within the POOL_FREEZE_NUM_BLOCKS grace
+                // period so no changes are allowed.
+                if (getNextPoolKey() != 0 && block.number >= (getNextPoolKey() - POOL_FREEZE_NUM_BLOCKS)) {
+                        return false;
+                }
+
+                // Account bond balance is too low.
+                if (callerBonds[callerAddress] < getMinimumBond()) {
+                        return false;
+                }
+                
+                return true;
+        }
+
+        function canExitPool(address callerAddress) public returns (bool) {
+                /*
+                 *  Returns boolean whether `callerAddress` is allowed to exit
+                 *  the current active pool.
+                 */
+                // Can't exit if we aren't in the current active pool.
+                if (!isInPool(callerAddress, getActivePoolKey())) {
+                        return false;
+                }
+
+                // There is a next pool coming up.
+                if (getNextPoolKey() != 0) {
+                        // Next pool begins within the POOL_FREEZE_NUM_BLOCKS
+                        // window and thus can't be modified.
+                        if (block.number >= (getNextPoolKey() - POOL_FREEZE_NUM_BLOCKS)) {
+                                return false;
+                        }
+
+                        // Next pool was already setup and callerAddress isn't
+                        // in it which indicates that they already left.
+                        if (!isInPool(callerAddress, getNextPoolKey())) {
+                                return false;
+                        }
+                }
+
+                // They must be in the current pool and either the next pool
+                // hasn't been initiated or it has but this user hasn't left
+                // yet.
+                return true;
+        }
+
+        function _initiateNextPool() internal {
+                if (getNextPoolKey() != 0) {
+                        // If there is already a next pool, we shouldn't
+                        // initiate a new one until it has become active.
+                        __throw();
+                }
+                // Set the next pool to start at double the freeze block number
+                // in the future.
+                uint nextPool = block.number + 2 * POOL_FREEZE_NUM_BLOCKS;
+
+                // Copy the current pool into the next pool.
+                callerPools[nextPool] = callerPools[getActivePoolKey()];
+
+                // Randomize the pool order
+                _shufflePool(nextPool);
+
+                // Push the next pool into the pool history.
+                poolHistory.length += 1;
+                poolHistory[poolHistory.length - 1] = nextPool;
+        }
+
+        function _shufflePool(uint poolNumber) internal {
+                var pool = callerPools[poolNumber];
+
+                uint swapIndex;
+                address buffer;
+
+                for (uint i = 0; i < pool.length; i++) {
+                        swapIndex = uint(sha3(block.blockhash(block.number), i)) % pool.length;
+                        if (swapIndex == i) {
+                                continue;
+                        }
+                        buffer = pool[i];
+                        pool[i] = pool[swapIndex];
+                        pool[swapIndex] = buffer;
+                }
+        }
+
+        //event AddedToPool(address indexed callerAddress, uint indexed pool);
+        //event RemovedFromPool(address indexed callerAddress, uint indexed pool);
+
+        function _addToPool(address callerAddress, uint poolNumber) internal {
+                if (poolNumber == 0 ) {
+                        // This shouldn't be called with 0;
+                        __throw();
+                }
+
+                // already in the pool.
+                if (isInPool(callerAddress, poolNumber)) {
+                        return;
+                }
+                var pool = callerPools[poolNumber];
+                pool.length += 1;
+                pool[pool.length - 1] = callerAddress;
+                
+                // Log the addition.
+                //AddedToPool(callerAddress, poolNumber);
+        }
+
+        function _removeFromPool(address callerAddress, uint poolNumber) internal {
+                if (poolNumber == 0 ) {
+                        // This shouldn't be called with 0;
+                        __throw();
+                }
+
+                // nothing to remove.
+                if (!isInPool(callerAddress, poolNumber)) {
+                        return;
+                }
+                var pool = callerPools[poolNumber];
+                // special case length == 1
+                if (pool.length == 1) {
+                        pool.length = 0;
+                }
+                for (uint i = 0; i < pool.length; i++) {
+                        // When we find the index of the address to remove we
+                        // shift the last person to that location and then we
+                        // truncate the last member off of the end.
+                        if (pool[i] == callerAddress) {
+                                pool[i] = pool[pool.length - 1];
+                                pool.length -= 1;
+                                break;
+                        }
+                }
+
+                // Log the addition.
+                //RemovedFromPool(callerAddress, poolNumber);
+        }
+
+        function enterPool() public {
+                /*
+                 *  Request to be added to the call pool.
+                 */
+                if (canEnterPool(msg.sender)) {
+                        if (getNextPoolKey() == 0) {
+                                // This is the first address to modify the
+                                // current pool so we need to setup the next
+                                // pool.
+                                _initiateNextPool();
+                        }
+                        _addToPool(msg.sender, getNextPoolKey());
+                }
+        }
+
+        function exitPool() public {
+                /*
+                 *  Request to be removed from the call pool.
+                 */
+                if (canExitPool(msg.sender)) {
+                        if (getNextPoolKey() == 0) {
+                                // This is the first address to modify the
+                                // current pool so we need to setup the next
+                                // pool.
+                                _initiateNextPool();
+                        }
+                        _removeFromPool(msg.sender, getNextPoolKey());
+                }
+        }
+
+        function __throw() internal {
+                int[] x;
+                x[1];
+        }
+}
+
+
+contract Alarm {
+        /*
+         *  Administration API
+         *
+         *  There is currently no special administrative API beyond the hard
+         *  coded owner address which receives 1% of each executed call.  This
+         *  eliminates any need for trust as nobody has any special access.
+         */
+        function Alarm() {
+                unauthorizedRelay = new Relay();
+                authorizedRelay = new Relay();
+                callerPool = new CallerPool();
+        }
+
+        address constant owner = 0xd3cda913deb6f67967b99d67acdfa1712c293601;
+
+        /*
+         *  Account Management API
+         */
+        mapping (address => uint) public accountBalances;
+
+        function _deductFunds(address accountAddress, uint value) internal {
+                /*
+                 *  Helper function that should be used for any reduction of
+                 *  account funds.  It has error checking to prevent
+                 *  underflowing the account balance which would be REALLY bad.
+                 */
+                if (value > accountBalances[accountAddress]) {
+                        // Prevent Underflow.
+                        __throw();
+                }
+                accountBalances[accountAddress] -= value;
+        }
+
+        function _addFunds(address accountAddress, uint value) internal {
+                /*
+                 *  Helper function that should be used for any addition of
+                 *  account funds.  It has error checking to prevent
+                 *  overflowing the account balance.
+                 */
+                if (accountBalances[accountAddress] + value < accountBalances[accountAddress]) {
+                        // Prevent Overflow.
+                        __throw();
+                }
+                accountBalances[accountAddress] += value;
+        }
+
+        //event Deposit(address indexed _from, address indexed accountAddress, uint value);
+
+        function deposit(address accountAddress) public {
+                /*
+                 *  Public API for depositing funds in a specified account.
+                 */
+                _addFunds(accountAddress, msg.value);
+                //Deposit(msg.sender, accountAddress, msg.value);
+        }
+
+        //event Withdraw(address indexed accountAddress, uint value);
+
+        function withdraw(uint value) public {
+                /*
+                 *  Public API for withdrawing funds.
+                 */
+                if (accountBalances[msg.sender] >= value) {
+                        _deductFunds(msg.sender, value);
+                        if (!msg.sender.send(value)) {
+                                // Potentially sending money to a contract that
+                                // has a fallback function.  So instead, try
+                                // tranferring the funds with the call api.
+                                if (!msg.sender.call.gas(msg.gas).value(value)()) {
+                                        // Revert the entire transaction.  No
+                                        // need to destroy the funds.
+                                        __throw();
+                                }
+                        }
+                        //Withdraw(msg.sender, value);
+                }
+        }
+
+        function() {
+                /*
+                 *  Fallback function that allows depositing funds just by
+                 *  sending a transaction.
+                 */
+                _addFunds(msg.sender, msg.value);
+                //Deposit(msg.sender, msg.sender, msg.value);
+        }
+
+        /*
+         *  Call tracking API
+         */
+        struct Node {
+                bytes32 callKey;
+                bytes32 left;
+                bytes32 right;
+        }
+
+        bytes32 public rootNodeCallKey;
+
+        mapping (bytes32 => Node) call_to_node;
+
+        function _getTreeMaxBlock(bytes32 callKey) internal returns (uint) {
+                /*
+                 *  Returns the greatest block number for all calls in the
+                 *  section of the call tree denoted by callKey.
+                 */
+                Node currentNode = call_to_node[callKey];
+
+                while (true) {
+                        if (currentNode.right == 0x0) {
+                                return key_to_calls[currentNode.callKey].targetBlock;
+                        }
+
+                        currentNode = call_to_node[currentNode.right];
+                }
+        }
+
+        function _shouldGoLeft(bytes32 callKey, uint blockNumber) internal returns (bool) {
+                /*
+                 * not if left is empty
+                 * not if current node was already called
+                 * not if current node is in the past or current block.
+                 * not if left node is in the past.
+                 */
+                Node currentNode = call_to_node[callKey];
+
+                // Nowhere to go.
+                if (currentNode.left == 0x0) {
+                        return false;
+                }
+
+                Call currentCall = key_to_calls[callKey];
+
+                // Current call is already in the past or is up next.
+                if (currentCall.targetBlock <= blockNumber) {
+                        return false;
+                }
+
+                // Left call is in the past
+                if (blockNumber > _getTreeMaxBlock(currentNode.left)) {
+                        return false;
+                }
+
+                return true;
+        }
+
+        function _shouldGoRight(bytes32 callKey, uint blockNumber) internal returns (bool) {
+                /*
+                 * not if right is empty.
+                 * not if current node is already in the future.
+                 * not if current node is equal to targetBlock and it isn't already called.
+                 *
+                 */
+                Node currentNode = call_to_node[callKey];
+
+                // Nowhere to go.
+                if (currentNode.right == 0x0) {
+                        return false;
+                }
+
+                Call currentCall = key_to_calls[callKey];
+
+                // Current call is already in the future
+                if (currentCall.targetBlock > blockNumber) {
+                        return false;
+                }
+
+                // Current call equals the desired block number and has not
+                // been called yet and is not cancelled.
+                if (currentCall.targetBlock == blockNumber) {
+                        return false;
+                }
+
+                return true;
+        }
+
+        function getNextBlockWithCall(uint blockNumber) public returns (uint) {
+                bytes32 nextCallKey = getNextCallKey(blockNumber);
+                if (nextCallKey == 0x0) {
+                        return 0;
+                }
+                return key_to_calls[nextCallKey].targetBlock;
+        }
+
+        function getNextCallKey(uint blockNumber) public returns (bytes32) {
+                if (rootNodeCallKey == 0x0) {
+                        // No calls registered
+                        return 0x0;
+                }
+
+                Node currentNode = call_to_node[rootNodeCallKey];
+
+                while (true) {
+                        if (_shouldGoLeft(currentNode.callKey, blockNumber)) {
+                                currentNode = call_to_node[currentNode.left];
+                                continue;
+                        }
+                        if (_shouldGoRight(currentNode.callKey, blockNumber)) {
+                                currentNode = call_to_node[currentNode.right];
+                                continue;
+                        }
+
+                        // Not if it is before the blockNumber
+                        if (key_to_calls[currentNode.callKey].targetBlock < blockNumber) {
+                                return 0x0;
+                        }
+
+                        // Then it must be the next one.
+                        return currentNode.callKey;
+                }
+        }
+
+        function _isBlockNumberInTree(bytes32 callKey, uint blockNumber) internal returns (bool) {
+                var node = call_to_node[callKey];
+
+                while (true) {
+                        var call = key_to_calls[node.callKey];
+
+                        if (call.targetBlock == blockNumber) {
+                                return true;
+                        }
+
+                        if (node.left != 0x0 && call.targetBlock > blockNumber) {
+                                node = call_to_node[node.left];
+                                continue;
+                        }
+
+                        if (node.right != 0x0 && call.targetBlock < blockNumber) {
+                                node = call_to_node[node.right];
+                                continue;
+                        }
+
+                        return false;
+                }
+        }
+
+        function getNextCallSibling(bytes32 callKey) public returns (bytes32) {
+                /*
+                 *  Returns the callKey any subsequent calls that have the same
+                 *  block number as the provided callKey.  If there are no
+                 *  subsequent calls with the same block number returns 0x0
+                 */
+                var node = call_to_node[callKey];
+                var call = key_to_calls[callKey];
+                uint targetBlock = call.targetBlock;
+
+                while (true) {
+                        if (node.right != 0x0 && _isBlockNumberInTree(node.right, targetBlock)) {
+                                node = call_to_node[node.right];
+                                call = key_to_calls[node.callKey];
+                                if (call.targetBlock == targetBlock) {
+                                        return node.callKey;
+                                }
+                                continue;
+                        }
+
+                        if (node.left != 0x0 && _isBlockNumberInTree(node.left, targetBlock)) {
+                                node = call_to_node[node.left];
+                                call = key_to_calls[node.callKey];
+                                if (call.targetBlock == targetBlock) {
+                                        return node.callKey;
+                                }
+                                continue;
+                        }
+
+                        return 0x0;
+                }
+        }
+
+        function getCallLeftChild(bytes32 callKey) public returns (bytes32) {
+                return call_to_node[callKey].left;
+        }
+
+        function getCallRightChild(bytes32 callKey) public returns (bytes32) {
+                return call_to_node[callKey].right;
+        }
+
+        //event CallPlacedInTree(bytes32 indexed callKey);
+
+        function placeCallInTree(bytes32 callKey) internal {
+                /*
+                 * Calls are stored in a tree structure.  Each tree node
+                 * represents a single call.  Nodes have a left and right
+                 * child.  The left child represents a call that should happen
+                 * before the node.  The right child represents a call that
+                 * should happen after the node.
+                 */
+                Call targetCall = key_to_calls[callKey];
+
+                if (callKey == call_to_node[callKey].callKey) {
+                        // This call key is already placed in the tree.
+                        return;
+                }
+
+                if (rootNodeCallKey == 0x0) {
+                        // This is the first call placement and thus should be
+                        // set as the root node.
+                        rootNodeCallKey = callKey;
+                }
+
+                Node currentNode = call_to_node[rootNodeCallKey];
+
+                while (true) {
+                        if (currentNode.callKey == 0x0) {
+                                // This is a new node and should be mapped 
+                                currentNode.callKey = callKey;
+                                //CallPlacedInTree(callKey);
+                                return;
+                        }
+
+                        Call currentCall = key_to_calls[currentNode.callKey];
+
+                        if (targetCall.targetBlock < currentCall.targetBlock) {
+                                // Call should occure before the current node
+                                // and thus should exist in the left subtree.
+                                if (currentNode.left == 0x0) {
+                                        currentNode.left = callKey;
+                                }
+                                currentNode = call_to_node[currentNode.left];
+                                continue;
+                        }
+
+                        // Call should occur after the current node and thus
+                        // should exist in the right subtree.
+                        if (currentNode.right == 0x0) {
+                                currentNode.right = callKey;
+                        }
+                        currentNode = call_to_node[currentNode.right];
+                }
+        }
+
+        //event TreeRotatedRight(bytes32 indexed oldRootNodeCallKey, bytes32 indexed newRootNodeCallKey);
+
+        //function _rotateRight() internal {
+        //        /*
+        //         *  1. Detatch the left child of the root node.  This is the
+        //         *     new root node.
+        //         *  2. Detatch the right child of the new root node.
+        //         *  3. Set the old root node as the right child of the new root node.
+        //         *  4. Set the detatched right child from the new root node in
+        //         *     the appropriate location in the tree.
+        //         */
+        //        var oldRootNode = call_to_node[rootNodeCallKey];
+        //        var newRootNode = call_to_node[oldRootNode.left];
+        //        // #1
+        //        oldRootNode.left = 0x0;
+        //        rootNodeCallKey = newRootNode.callKey;
+
+        //        // #2
+        //        bytes32 detatchedChildCallKey = newRootNode.right;
+        //        newRootNode.right = 0x0;
+
+        //        // #3
+        //        newRootNode.right = oldRootNode.callKey;
+
+        //        // #4
+        //        if (detatchedChildCallKey != 0x0) {
+        //                // First reset the node to not have a callKey,
+        //                // otherwise the call to `placeCallInTree` will exit
+        //                // early thinking this node is already placed.
+        //                var detatchedChildNode = call_to_node[detatchedChildCallKey];
+        //                detatchedChildNode.callKey = 0x0;
+        //                // Now place it at it's new location in the tree.
+        //                placeCallInTree(detatchedChildCallKey);
+        //        }
+
+        //        //TreeRotatedRight(oldRootNode.callKey, newRootNode.callKey);
+        //}
+
+        //function _shouldRotateRight() internal returns (bool) {
+        //        /*
+        //         *  Is the left child of the rootNode in the future of the
+        //         *  current block number.
+        //         */
+        //        if (rootNodeCallKey == 0x0) {
+        //                return false;
+        //        }
+
+        //        var currentRoot = call_to_node[rootNodeCallKey];
+
+        //        // No left child so cant rotate right.
+        //        if (currentRoot.left == 0x0) {
+        //                return false;
+        //        }
+
+        //        // Current root already in the past.
+        //        if (key_to_calls[rootNodeCallKey].targetBlock <= block.number) {
+        //                return false;
+        //        }
+
+        //        return true;
+        //}
+
+        //event TreeRotatedLeft(bytes32 indexed oldRootNodeCallKey, bytes32 indexed newRootNodeCallKey);
+
+        function _rotateLeft() internal {
+                /*
+                 *  1. Detatch the right child of the root node.  This is the
+                 *     new root node.
+                 *  2. Detatch the left child of the new root node.
+                 *  3. Set the old root node as the left child of the new root node.
+                 *  4. Set the detatched left child from the new root node in
+                 *     the appropriate location in the tree.
+                 */
+                var oldRootNode = call_to_node[rootNodeCallKey];
+                var newRootNode = call_to_node[oldRootNode.right];
+                // #1
+                oldRootNode.right = 0x0;
+                rootNodeCallKey = newRootNode.callKey;
+
+                // #2
+                bytes32 detatchedChildCallKey = newRootNode.left;
+
+                // #3
+                newRootNode.left = oldRootNode.callKey;
+
+                // #4
+                if (detatchedChildCallKey != 0x0) {
+                        // First reset the node to not have a callKey,
+                        // otherwise the call to `placeCallInTree` will exit
+                        // early thinking this node is already placed.
+                        var detatchedChildNode = call_to_node[detatchedChildCallKey];
+                        detatchedChildNode.callKey = 0x0;
+                        // Now place it at it's new location in the tree.
+                        placeCallInTree(detatchedChildCallKey);
+                }
+                //TreeRotatedLeft(oldRootNode.callKey, newRootNode.callKey);
+        }
+
+        function _shouldRotateLeft() internal returns (bool) {
+                /*
+                 *  We should rotate left if both the current root node, and
+                 *  its right child are both in the past.
+                 */
+                // Empty call tree.
+                if (rootNodeCallKey == 0x0) {
+                        return false;
+                }
+
+                var currentRoot = call_to_node[rootNodeCallKey];
+
+                // No right child so cant rotate left.
+                if (currentRoot.right == 0x0) {
+                        return false;
+                }
+
+                // Current root already in the future.
+                if (key_to_calls[rootNodeCallKey].targetBlock >= block.number) {
+                        return false;
+                }
+
+                if (key_to_calls[currentRoot.right].targetBlock >= block.number) {
+                        return false;
+                }
+
+                return true;
+        }
+
+        function rotateTree() public {
+                /*
+                 *  Shifts the root node of the tree so that the root node is
+                 *  the tree node prior to the next scheduled call.
+                 */
+                if (rootNodeCallKey == 0x0) {
+                        // No root node (empty tree)
+                        return;
+                }
+
+                var currentRoot = call_to_node[rootNodeCallKey];
+                var rootBlockNumber = key_to_calls[rootNodeCallKey].targetBlock;
+
+                // The current root is in the past so we can potentially rotate
+                // the tree to the left to increase the root block number.
+                if (rootBlockNumber < block.number) {
+                        while (_shouldRotateLeft()) {
+                                _rotateLeft();
+                        }
+                        return;
+                }
+
+                // The current root is in the future so we can potentially
+                // rotate the tree to the right to decrease the root block
+                // number.
+                //if (rootBlockNumber > block.number) {
+                //        while (_shouldRotateRight()) {
+                //                _rotateRight();
+                //        }
+                //}
+        }
+
+        /*
+         *  Scheduling Authorization API
+         */
+        Relay unauthorizedRelay;
+        Relay authorizedRelay;
+
+        function unauthorizedAddress() public returns (address) {
+                return address(unauthorizedRelay);
+        }
+
+        function authorizedAddress() public returns (address) {
+                return address(authorizedRelay);
+        }
+
+        mapping (bytes32 => bool) accountAuthorizations;
+
+        function addAuthorization(address schedulerAddress) public {
+                accountAuthorizations[sha3(schedulerAddress, msg.sender)] = true;
+        }
+
+        function removeAuthorization(address schedulerAddress) public {
+                accountAuthorizations[sha3(schedulerAddress, msg.sender)] = false;
+        }
+
+        function checkAuthorization(address schedulerAddress, address contractAddress) public returns (bool) {
+                return accountAuthorizations[sha3(schedulerAddress, contractAddress)];
+        }
+
+        /*
+         *  Call Information API
+         */
+        bytes32 lastCallKey;
+
+        function getLastCallKey() public returns (bytes32) {
+                return lastCallKey;
+        }
+
+        struct Call {
+                address contractAddress;
+                address scheduledBy;
+                uint calledAtBlock;
+                uint targetBlock;
+                uint8 gracePeriod;
+                uint nonce;
+                uint baseGasPrice;
+                uint gasPrice;
+                uint gasUsed;
+                uint gasCost;
+                uint payout;
+                uint fee;
+                address executedBy;
+                bytes4 abiSignature;
+                bool isCancelled;
+                bool wasCalled;
+                bool wasSuccessful;
+                bytes32 dataHash;
+        }
+
+        mapping (bytes32 => Call) key_to_calls;
+
+        /*
+         *  Getter methods for `Call` information
+         */
+        function getCallContractAddress(bytes32 callKey) public returns (address) {
+                return key_to_calls[callKey].contractAddress;
+        }
+
+        function getCallScheduledBy(bytes32 callKey) public returns (address) {
+                return key_to_calls[callKey].scheduledBy;
+        }
+
+        function getCallCalledAtBlock(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].calledAtBlock;
+        }
+
+        function getCallGracePeriod(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].gracePeriod;
+        }
+
+        function getCallTargetBlock(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].targetBlock;
+        }
+
+        function getCallBaseGasPrice(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].baseGasPrice;
+        }
+
+        function getCallGasPrice(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].gasPrice;
+        }
+
+        function getCallGasUsed(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].gasUsed;
+        }
+
+        function getCallABISignature(bytes32 callKey) public returns (bytes4) {
+                return key_to_calls[callKey].abiSignature;
+        }
+
+        function checkIfCalled(bytes32 callKey) public returns (bool) {
+                return key_to_calls[callKey].wasCalled;
+        }
+
+        function checkIfSuccess(bytes32 callKey) public returns (bool) {
+                return key_to_calls[callKey].wasSuccessful;
+        }
+
+        function checkIfCancelled(bytes32 callKey) public returns (bool) {
+                return key_to_calls[callKey].isCancelled;
+        }
+
+        function getCallDataHash(bytes32 callKey) public returns (bytes32) {
+                return key_to_calls[callKey].dataHash;
+        }
+
+        function getCallPayout(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].payout;
+        }
+
+        function getCallFee(bytes32 callKey) public returns (uint) {
+                return key_to_calls[callKey].fee;
+        }
+
+        /*
+         *  Data Registry API
+         */
+        bytes lastData;
+        uint lastDataLength;
+        bytes32 lastDataHash;
+
+        function getLastDataHash() public returns (bytes32) {
+                return lastDataHash;
+        }
+
+        function getLastDataLength() public returns (uint) {
+                return lastDataLength;
+        }
+
+        function getLastData() public returns (bytes) {
+                return lastData;
+        }
+
+        function getCallData(bytes32 callKey) public returns (bytes) {
+                return hash_to_data[key_to_calls[callKey].dataHash];
+        }
+
+        mapping (bytes32 => bytes) hash_to_data;
+
+        /*
+         *  Data registration API
+         */
+        //event DataRegistered(bytes32 indexed dataHash);
+
+        function registerData() public {
+                bytes trunc;
+                if (msg.data.length > 4) {
+                        trunc.length = msg.data.length - 4;
+                        for (uint i = 0; i < trunc.length; i++) {
+                                trunc[trunc.length - 1 - i] = msg.data[msg.data.length - 1 - i];
+                        }
+                }
+                hash_to_data[sha3(trunc)] = trunc;
+                lastDataHash = sha3(trunc);
+                lastDataLength = trunc.length;
+                lastData = trunc;
+
+                // Log it.
+                //DataRegistered(lastDataHash);
+        }
+
+        /*
+         *  Call execution API
+         */
+        CallerPool callerPool;
+
+        function getCallerPoolAddress() public returns (address) {
+                return address(callerPool);
+        }
+
+        // This number represents the constant gas cost of the addition
+        // operations that occur in `doCall` that cannot be tracked with
+        // msg.gas.
+        //
+        // NOTE: Currently this value seems to vary between 151761 and 151697.
+        // Until I can understand why this is happening, or account for it, we
+        // use the higher value.
+        uint constant EXTRA_CALL_GAS = 151761;
+        // uint constant EXTRA_CALL_GAS = 151697;
+
+        // This number represents the overall overhead involved in executing a
+        // scheduled call.
+        uint constant CALL_OVERHEAD = 145601;
+
+        //event CallExecuted(address indexed executedBy, bytes32 indexed callKey);
+        //event CallAborted(address indexed executedBy, bytes32 indexed callKey, bytes18 reason);
+
+        function doCall(bytes32 callKey) public {
+                uint gasBefore = msg.gas;
+
+                var call = key_to_calls[callKey];
+
+                if (call.wasCalled) {
+                        // The call has already been executed so don't do it again.
+                        //CallAborted(msg.sender, callKey, "ALREADY CALLED");
+                        return;
+                }
+
+                if (call.isCancelled) {
+                        // The call was cancelled so don't execute it.
+                        //CallAborted(msg.sender, callKey, "CANCELLED");
+                        return;
+                }
+
+                if (call.contractAddress == 0x0) {
+                        // This call key doesnt map to a registered call.
+                        //CallAborted(msg.sender, callKey, "UNKNOWN");
+                        return;
+                }
+
+                if (block.number < call.targetBlock) {
+                        // Target block hasnt happened yet.
+                        //CallAborted(msg.sender, callKey, "TOO EARLY");
+                        return;
+                }
+
+                if (block.number > call.targetBlock + call.gracePeriod) {
+                        // The blockchain has advanced passed the period where
+                        // it was allowed to be called.
+                        //CallAborted(msg.sender, callKey, "TOO LATE");
+                        return;
+                }
+
+                uint heldBalance = getCallMaxCost(callKey);
+
+                if (accountBalances[call.scheduledBy] < heldBalance) {
+                        // The scheduledBy's account balance is less than the
+                        // current gasLimit and thus potentiall can't pay for
+                        // the call.
+
+                        // Mark it as called since it was.
+                        call.wasCalled = true;
+                        
+                        // Log it.
+                        //CallAborted(msg.sender, callKey, "INSUFFICIENT_FUNDS");
+                        return;
+                }
+
+                // Check if this caller is allowed to execute the call.
+                if (callerPool.getPoolSize(callerPool.getActivePoolKey()) > 0) {
+                        address poolCaller = callerPool.getDesignatedCaller(callKey, call.targetBlock, call.gracePeriod, block.number);
+                        if (poolCaller != 0x0 && poolCaller != msg.sender) {
+                                // This call was reserved for someone from the
+                                // bonded pool of callers and can only be
+                                // called by them during this block window.
+                                //CallAborted(msg.sender, callKey, "WRONG_CALLER");
+                                return;
+                        }
+
+                        uint blockWindow = (block.number - call.targetBlock) / 4;
+                        if (blockWindow > 0) {
+                                // Someone missed their call so this caller
+                                // gets to claim their bond for picking up
+                                // their slack.
+                                callerPool.awardMissedBlockBonus(msg.sender, callKey, call.targetBlock, call.gracePeriod);
+                        }
+                }
+
+                // Log metadata about the call.
+                call.gasPrice = tx.gasprice;
+                call.executedBy = msg.sender;
+                call.calledAtBlock = block.number;
+
+                // Fetch the call data
+                var data = getCallData(callKey);
+
+                // During the call, we need to put enough funds to pay for the
+                // call on hold to ensure they are available to pay the caller.
+                _deductFunds(call.scheduledBy, heldBalance);
+
+                // Mark whether the function call was successful.
+                if (checkAuthorization(call.scheduledBy, call.contractAddress)) {
+                        call.wasSuccessful = authorizedRelay.relayCall.gas(msg.gas - CALL_OVERHEAD)(call.contractAddress, call.abiSignature, data);
+                }
+                else {
+                        call.wasSuccessful = unauthorizedRelay.relayCall.gas(msg.gas - CALL_OVERHEAD)(call.contractAddress, call.abiSignature, data);
+                }
+
+                // Add the held funds back into the scheduler's account.
+                _addFunds(call.scheduledBy, heldBalance);
+
+                // Mark the call as having been executed.
+                call.wasCalled = true;
+
+                // Log the call execution.
+                //CallExecuted(msg.sender, callKey);
+
+                // Compute the scalar (0 - 200) for the fee.
+                uint feeScalar = getCallFeeScalar(call.baseGasPrice, call.gasPrice);
+
+                // Log how much gas this call used.  EXTRA_CALL_GAS is a fixed
+                // amount that represents the gas usage of the commands that
+                // happen after this line.
+                call.gasUsed = (gasBefore - msg.gas + EXTRA_CALL_GAS);
+                call.gasCost = call.gasUsed * call.gasPrice;
+
+                // Now we need to pay the caller as well as keep fee.
+                // callerPayout -> call cost + 1%
+                // fee -> 1% of callerPayout
+                call.payout = call.gasCost * feeScalar * 101 / 10000;
+                call.fee = call.gasCost * feeScalar / 10000;
+
+                _deductFunds(call.scheduledBy, call.payout + call.fee);
+
+                _addFunds(msg.sender, call.payout);
+                _addFunds(owner, call.fee);
+        }
+
+        function getCallMaxCost(bytes32 callKey) public returns (uint) {
+                /*
+                 *  tx.gasprice * block.gaslimit
+                 *  
+                 */
+                // call cost + 2%
+                var call = key_to_calls[callKey];
+
+                uint gasCost = tx.gasprice * block.gaslimit;
+                uint feeScalar = getCallFeeScalar(call.baseGasPrice, tx.gasprice);
+
+                return gasCost * feeScalar * 102 / 10000;
+        }
+
+        function getCallFeeScalar(uint baseGasPrice, uint gasPrice) public returns (uint) {
+                /*
+                 *  Return a number between 0 - 200 to scale the fee based on
+                 *  the gas price set for the calling transaction as compared
+                 *  to the gas price of the scheduling transaction.
+                 *
+                 *  - number approaches zero as the transaction gas price goes
+                 *  above the gas price recorded when the call was scheduled.
+                 *
+                 *  - the number approaches 200 as the transaction gas price
+                 *  drops under the price recorded when the call was scheduled.
+                 *
+                 *  This encourages lower gas costs as the lower the gas price
+                 *  for the executing transaction, the higher the payout to the
+                 *  caller.
+                 */
+                if (gasPrice > baseGasPrice) {
+                        return 100 * baseGasPrice / gasPrice;
+                }
+                else {
+                        return 200 - 100 * baseGasPrice / (2 * baseGasPrice - gasPrice);
+                }
+        }
+
+        /*
+         *  Call Scheduling API
+         */
+
+        // The result of `sha()` so that we can validate that people aren't
+        // looking up call data that failed to register.
+        bytes32 constant emptyDataHash = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470;
+
+        function getCallKey(address scheduledBy, address contractAddress, bytes4 abiSignature, bytes32 dataHash, uint targetBlock, uint8 gracePeriod, uint nonce) public returns (bytes32) {
+                return sha3(scheduledBy, contractAddress, abiSignature, dataHash, targetBlock, gracePeriod, nonce);
+        }
+
+        // Ten minutes into the future.
+        uint constant MAX_BLOCKS_IN_FUTURE = 40;
+
+        //event CallScheduled(bytes32 indexed callKey);
+        //event CallRejected(bytes32 indexed callKey, bytes15 reason);
+
+        function scheduleCall(address contractAddress, bytes4 abiSignature, bytes32 dataHash, uint targetBlock, uint8 gracePeriod, uint nonce) public {
+                /*
+                 * Primary API for scheduling a call.  Prior to calling this
+                 * the data should already have been registered through the
+                 * `registerData` API.
+                 */
+                bytes32 callKey = getCallKey(msg.sender, contractAddress, abiSignature, dataHash, targetBlock, gracePeriod, nonce);
+
+                if (dataHash != emptyDataHash && hash_to_data[dataHash].length == 0) {
+                        // Don't allow registering calls if the data hash has
+                        // not actually been registered.  The only exception is
+                        // the *emptyDataHash*.
+                        //CallRejected(callKey, "NO_DATA");
+                        return;
+                }
+
+                if (targetBlock < block.number + MAX_BLOCKS_IN_FUTURE) {
+                        // Don't allow scheduling further than
+                        // MAX_BLOCKS_IN_FUTURE
+                        //CallRejected(callKey, "TOO_SOON");
+                        return;
+                }
+                var call = key_to_calls[callKey];
+
+                if (call.contractAddress != 0x0) {
+                        //CallRejected(callKey, "DUPLICATE");
+                        return;
+                }
+
+                if (gracePeriod < 16) {
+                        //CallRejected(callKey, "GRACE_TOO_SHORT");
+                        return;
+                }
+
+                lastCallKey = callKey;
+
+                call.contractAddress = contractAddress;
+                call.scheduledBy = msg.sender;
+                call.nonce = nonce;
+                call.abiSignature = abiSignature;
+                call.dataHash = dataHash;
+                call.targetBlock = targetBlock;
+                call.gracePeriod = gracePeriod;
+                call.baseGasPrice = tx.gasprice;
+
+                placeCallInTree(lastCallKey);
+                rotateTree();
+
+                //CallScheduled(lastCallKey);
+        }
+
+        //event CallCancelled(bytes32 indexed callKey);
+
+        // Two minutes
+        uint constant MIN_CANCEL_WINDOW = 8;
+
+        function cancelCall(bytes32 callKey) public {
+                var call = key_to_calls[callKey];
+                if (call.scheduledBy != msg.sender) {
+                        // Nobody but the scheduler can cancel a call.
+                        return;
+                }
+                if (call.wasCalled) {
+                        // No need to cancel a call that already was executed.
+                        return;
+                }
+                if (call.targetBlock - MIN_CANCEL_WINDOW <= block.number) {
+                        // Call cannot be cancelled this close to execution.
+                        return;
+                }
+                call.isCancelled = true;
+                //CallCancelled(callKey);
+        }
+
+        function __throw() internal {
+                int[] x;
+                x[1];
+        }
+}
+</code></pre>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <h2 id="source-binary">Compiled Binary</h2>
+        <pre class="alarm-binary-code"><code class="language-bash">$ solc --infile source.sol --optimize 1 --optimize-runs 200 --binary stdout
+======= Alarm =======
+Binary: 
+6060604052606061016f80611a7c833950506040516101cf819003906000f060405160038054600160a060020a0319169290921790915561016f80611a7c833901809050604051809103906000f060405160048054600160a060020a03191692909217909155610d9080611beb833901809050604051809103906000f0600c8054600160a060020a0319169190911790556119dd8061009f6000396000f300606060405236156101ed5760e060020a6000350463022bc71f811461023057806303d6d7b6146102a5578063086ae9e4146102d057806309c975df146102ee57806312d67c5f146103115780631302188c1461031b578063234917d4146103265780632874fb17146103435780632a472ae81461035b5780632e1a7d4d1461038257806334c19b93146103b257806335b28153146103d25780633664a0ea1461041d5780633de622751461042857806352afbc331461043157806353a0dc7d146104595780635539d400146104cc57806360b831e5146104e0578063662fc8a014610513578063685c234a146105275780636ff96d17146105745780636ffc08961461058c57806375428615146105b357806377b19cd51461063e57806378bc64601461065b5780638b37e65614610679578063930df7b11461069f57806394d2b21b146106bc57806394f3f81d146106d0578063a9743c681461071a578063aa4cc01f14610737578063aa6704da1461075e578063b0ac4c8c14610779578063b0f07e44146107ea578063b1b1af7b14610837578063cd06273414610855578063da0774ad1461087f578063e19eb0dd146108a0578063e4098655146108b3578063f340fa01146108d0578063f9f447eb146108e0578063fc300522146108fd578063fcf369181461091a575b61041b61097133345b600160a060020a0382166000908152602081905260409020548082011015610a1057610a105b600080600181548110156100025750508052565b61097360043560008181526002602090815260408083206007909252822060038101545b6002830154600014801590610bd057506002830154610bd090825b6000828152600260205260408120815b508054600090815260076020526040902060038101548414156118195760019250611763565b6109736004355b600081815260076020526040812060068101543a45810291849161161d9190610889565b6109736004356000818152600760205260409020600801545b919050565b610985600435600081815260076020526040902054600160a060020a03166102e9565b6109736009545b90565b610973600a54610318565b6109736004356000818152600760205260409020600301546102e9565b61041b5b6001546000908190811415610c7b57610a2f565b6109736004356000818152600760205260409020600c015460c860020a900460ff166102e9565b61041b600435600160a060020a033316600090815260208190526040902054819010610a3357610a363382610a9f565b61097360043560008181526007602052604090206004015460ff166102e9565b60408051600435600160a060020a03908116606060020a9081028352339190911602601482015281519081900360280190206000908152600560205220805460ff191660011790555b005b610973600654610318565b61097360015481565b61041b60043560243560443560643560843560a4356000600061164533898989898989610472565b61097360043560243560443560643560843560a43560c4355b60408051600160a060020a03988916606060020a90810282529790981690960260148801526028870194909452602c860192909252604c85015260ff1660f860020a02606c840152606d8301525190819003608d01902090565b610985600454600160a060020a0316610318565b61041b60043560008181526007602052604090206001810154600160a060020a039081163391909116146116df57610a2f565b610985600c54600160a060020a0316610318565b6109736004356024355b60408051600160a060020a03848116606060020a9081028352908416026014820152815190819003602801902060009081526005602052205460ff165b92915050565b61097360043560006020819052908152604090205481565b6109736004356000818152600760205260409020600c015460d060020a900460ff166102e9565b6109a26004355b6040805160208181018352600080835284815260078252838120600d01548152600b825283902080548451601f8201849004840281018401909552808552929392909183018282801561063257820191906000526020600020905b81548152906001019060200180831161061557829003601f168201915b505050505090506102e9565b6109736004356000818152600760205260409020600601546102e9565b610973600435600081815260076020819052604090912001546102e9565b610985600435600081815260076020526040902060010154600160a060020a03166102e9565b6109736004356000818152600260205260409020600101546102e9565b610985600354600160a060020a0316610318565b60408051600435600160a060020a03908116606060020a9081028352339190911602601482015281519081900360280190206000908152600560205220805460ff1916905561041b565b6109736004356000818152600760205260409020600a01546102e9565b6109736004356000818152600760205260409020600c015460c060020a900460ff166102e9565b6109736004355b6001546000908190811415610af657610adc565b6109a2604080516020818101835260008252825160088054601f810184900484028301840190955284825292939092918301828280156107de57820191906000526020600020905b8154815290600101906020018083116107c157829003601f168201915b50505050509050610318565b61041b6000806004361115610de05760046000369050038281815481835581811511610d3e57601f016020900481601f01602090048360005260206000209182019101610d3e9190610dc3565b610973600435600081815260026020819052604090912001546102e9565b6109736004356000818152600760205260409020600c015460a060020a900460e060020a026102e9565b6109736004356024355b60008282111561163057818360640204905061056e565b61097360043560006000610ae283610765565b6109736004356000818152600760205260409020600201546102e9565b61041b600435610a3381346101f6565b6109736004356000818152600760205260409020600d01546102e9565b6109736004356000818152600760205260409020600b01546102e9565b61041b60043560006000600060006000602060405190810160405280600081526020015060005a888252600760205260408220600c810154919850965060c860020a900460ff161561100d575b5050505050505050565b565b60408051918252519081900360200190f35b60408051600160a060020a03929092168252519081900360200190f35b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f168015610a025780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b600160a060020a03821660009081526020819052604090208054820190555b5050565b50565b604051600160a060020a03331690600090839082818181858883f193505050501515610a335733600160a060020a03165a60405183906000818181858888f193505050501515610a3357610a3361021c565b600187015490925061131690600160a060020a0316865b600160a060020a03821660009081526020819052604090205481111561173b5761173b61021c565b60008181526007602052604090206003015491505b50919050565b90506000811415610ac75760009150610adc565b5060015460009081526002602052604090205b8054610b31908460008281526002602052604081206001810154829081141561176b57611763565b15610b4d57600101546000908152600260205260409020610b09565b8054610b769084600082815260026020819052604082209081015482908114156117df57611763565b15610b9557600290810154600090815260209190915260409020610b09565b805460009081526007602052604090206003015483901015610bba5760009150610adc565b80549150610adc565b600093505b505050919050565b15610c0d5760029283015460009081526020938452604080822080548352600790955290206003810154909250811415610c2c5782549350610bc8565b6001830154600014801590610c3157506001830154610c31908261026f565b610254565b15610bc3576001929092015460009081526002602090815260408083208054845260079092529091206003810154919390925090811415610c2c5782600001600050549350610bc8565b5050600154600090815260026020908152604080832060079092529091206003015443811015610a2f575b610cc2600154600090819081141561194e57610ddc565b610a2f565b15610cbd57610d3960018054600090815260026020819052604080832091820180548452908320908390558054845592830180548254909155909291818114611007576002600050600083815260200190815260200160002060005090506000600102816000016000508190555061100782610fe1565b610ca6565b50505050600090505b8154811015610de05760003682810360001901908110156100025790013560f860020a900460f860020a0282826001855403038154811015610002579060005260206000209060209182820401919006601f036101000a81548160ff0219169060f860020a84040217905550600101610d47565b50610e879291505b80821115610ddc5760008155600101610dc3565b600191505b5090565b81600b600050600084604051808280548015610e1857820191906000526020600020905b815481529060010190602001808311610e04575b50509150506040518091039020815260200190815260200160002060005090805482805482825590600052602060002090601f01602090048101928215610dbb57600052602060002091601f016020900482015b82811115610dbb578254825591600101919060010190610e6c565b505081604051808280548015610eb957820191906000526020600020905b815481529060010190602001808311610ea5575b5050604051908190039020600a5550508154600981905560088054828255600082905290916020601f92909201919091047ff3f7a9fe364faab93b216da50a3214154f22a0a2b415b23a84c8169e8b636ee39081019190858215610f4557600052602060002091601f016020900482015b82811115610f45578254825591600101919060010190610f2a565b50611007929150610dc3565b6006828155815473ffffffffffffffffffffffffffffffffffffffff199081168a1783556001830180549091163317905560058201849055600c8201805477ffffffff0000000000000000000000000000000000000000191660a060020a60e060020a8b0402179055600d82018790556003820186905560048201805460ff1916861790553a82820155546116d7905b600081815260076020908152604080832060029092528220549091908190841415611895575b50505050565b600c86015460c060020a900460ff161561102657610967565b8554600160a060020a03166000141561103e57610967565b600386015443101561104f57610967565b6003860154600487015460ff160143111561106957610967565b611072886102ac565b6001870154600160a060020a0316600090815260208190526040902054909550859010156110b757600c8601805460c860020a60ff02191660c860020a179055610967565b60408051600c547fa6814e8e0000000000000000000000000000000000000000000000000000000082529151600092600160a060020a031691636595f73a91839163a6814e8e916004828101926020929190829003018189876161da5a03f1156100025750506040805180517f6595f73a0000000000000000000000000000000000000000000000000000000082526004820152905160248281019350602092829003018187876161da5a03f115610002575050506040515111156112e05760408051600c54600389015460048a8101547fe8543d0d0000000000000000000000000000000000000000000000000000000085529084018d9052602484019190915260ff1660448301524360648301529151600160a060020a03929092169163e8543d0d9160848181019260209290919082900301816000876161da5a03f1156100025750505060405151935083600160a060020a0316600014158015611230575033600160a060020a031684600160a060020a031614155b1561123a57610967565b60048660030160005054430304925060008311156112e057604080516003880154600c5460048a8101547f9d12f0f5000000000000000000000000000000000000000000000000000000008552600160a060020a0333811692860192909252602485018e9052604485019390935260ff9290921660648401529251921691639d12f0f591608481810192600092909190829003018183876161da5a03f115610002575050505b3a6007870155600c8601805473ffffffffffffffffffffffffffffffffffffffff191633179055436002870155610a88886105ba565b8554600187015461133391600160a060020a039182169116610531565b1561144457600454600160a060020a031663e8b1d0f3620238c15a038860000160009054906101000a9004600160a060020a031689600c0160149054906101000a900460e060020a02866040518560e060020a0281526004018084600160a060020a03168152602001838152602001806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156113fe5780820380516001836020036101000a031916815260200191505b5094505050505060206040518083038160008887f11561000257505060405151600c8901805460d060020a60ff02191660d060020a9092029190911790555061154b9050565b600354600160a060020a031663e8b1d0f3620238c15a038860000160009054906101000a9004600160a060020a031689600c0160149054906101000a900460e060020a02866040518560e060020a0281526004018084600160a060020a03168152602001838152602001806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561150a5780820380516001836020036101000a031916815260200191505b5094505050505060206040518083038160008887f11561000257505060405151600c8901805460d060020a60ff02191660d060020a90920291909117905550505b600186015461156390600160a060020a0316866101f6565b600c8601805460c860020a60ff02191660c860020a1790556006860154600787015461158f9190610889565b9050620250d15a880301600887018190556007870154026009870181905561271090820260658102829004600a8901819055919004600b880181905560018801546115e792600160a060020a03919091169101610a9f565b6115f83387600a01600050546101f6565b61096773d3cda913deb6f67967b99d67acdfa1712c29360187600b01600050546101f6565b9050612710818302606602049350610bc8565b818360020203836064020460c803905061056e565b91507fc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470861415801561168357506000868152600b6020526040812054145b1561168d57610967565b6028430185101561169d57610967565b50600081815260076020526040812080549091600160a060020a0391909116146116c657610967565b60108460ff161015610f5157610967565b610967610347565b600c81015460c860020a900460ff16156116f857610a2f565b600381015443600719919091011161170f57610a2f565b600c01805478ff000000000000000000000000000000000000000000000000191660c060020a17905550565b600160a060020a0382166000908152602081905260409020805482900390555050565b600192505b505092915050565b506000848152600760205260409020600381015484901161178f5760009250611763565b60018201546117cf9060008181526002602052604081205b6002810154600014156119c35780546000908152600760205260409020600301549150610adc565b84111561175e5760009250611763565b5060008481526007602052604090206003810154849011156118045760009250611763565b600381015484141561175e5760009250611763565b6001820154600014801590611832575060038101548490115b15611852576001919091015460009081526002602052604090209061027f565b600282015460001480159061186b575060038101548490105b1561188c57600291820154600090815260209290925260409091209061027f565b60009250611763565b600154600014156118a65760018490555b600154600090815260026020526040902091505b8154600014156118cc57838255611007565b508054600090815260076020526040902060038181015490840154101561191d5760018201546000141561190257600182018490555b600191909101546000908152600260205260409020906118ba565b60028201546000141561193257600282018490555b60029182015460009081526020929092526040909120906118ba565b506001546000908152600260208190526040822090810154909114156119775760009150610ddc565b60015460009081526007602052604090206003015443901061199c5760009150610ddc565b6002810154600090815260076020526040902060030154439010610dd75760009150610ddc565b6002908101546000908152602091909152604090206117a756606060405260008054600160a060020a0319163317905561014a806100256000396000f300606060405260e060020a6000350463e8b1d0f3811461001b575b005b60806020601f6044356004818101359283018490049093028401604052606082815261009e949335936024803594606494909101918190838280828437509495505050505050600080543373ffffffffffffffffffffffffffffffffffffffff9081169116146100b0576100b06000806001815481101561000257505080805250565b60408051918252519081900360200190f35b8373ffffffffffffffffffffffffffffffffffffffff168360e060020a9004836040518260e060020a028152600401808280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156101295780820380516001836020036101000a031916815260200191505b509150506000604051808303816000876161da5a03f197965050505050505056606060405260008054600160a060020a0319908116331780835560018054909216600160a060020a03909116179055610d5290819061003e90396000f300606060405236156100e55760e060020a600035046319f74e1f811461012957806323306ed614610147578063299179541461015257806350a3bd391461015e5780635ae348681461016a5780636595f73a14610175578063741b3c391461019057806384c92c9a146101985780638dd5e298146101ad578063910789c4146101bf5780639d12f0f5146101fc578063a6814e8e1461023e578063aec918c71461024d578063b010d94a1461026d578063bc966ddc14610282578063c3daab961461028d578063c4afc3fb1461029c578063c861cd66146102b7578063e8543d0d146102cf575b6103135b61031533345b600160a060020a0382166000908152600260205260409020548082011015610346576103465b600080600181548110156100025750508052565b6103176004356024355b600060006000836000141561075957610751565b6103175b3a45025b90565b6103136108ca33610274565b61031361088e336101b4565b61031761020061014f565b6103176004356000818152600460205260409020545b919050565b6103136100e9565b6103176004355b600061072e33610740610242565b6103176004355b60006107c98261019f565b61031760043560038054829081101561000257506000527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b015481565b61031360043560243560443560643560008054819081908190819081908190600160a060020a039081163391909116146104cc575b5050505050505050505050565b6103175b60006106d243610254565b6103176004355b6000600060006003600050546000141561066a57610663565b6103176004355b600061083d82610740610242565b61031761010061014f565b6103136004356103683361019f565b6103175b60006000600360005054600014156106e2576106de565b61031760043560026020526000908152604090205481565b610329600435602435604435606435600060006000600060006000888710806102fc57508760ff16890187115b1561044357600095505b5050505050949350505050565b005b565b60408051918252519081900360200190f35b60408051600160a060020a03929092168252519081900360200190f35b600160a060020a03821660009081526002602052604090208054820190555050565b156103c357600160a060020a03331660009081526002602052604090205481111561039557610395610115565b61039d61014b565b600160a060020a03331660009081526002602052604090205482900310156103c3575b50565b6103f133825b600160a060020a0382166000908152600260205260409020548111156108f3576108f3610115565b604051600160a060020a03331690600090839082818181858883f1935050505015156103c05733600160a060020a03165a60405183906000818181858888f1935050505015156103c0576103c0610115565b61044c89610254565b945084600014156104605760009550610306565b6000858152600460208190526040909120945060ff89811682900416935089880304915060028201839011156104995760009550610306565b508254808a069084908284018190069081101561000257600091825260209091200154600160a060020a03169550610306565b6104d589610254565b600081815260046020819052604090912091985090965060ff898116829004169250438a9003049050600281018290111561054d57600094505b8554851015610231578a600160a060020a03168686815481101561000257600091825260209091200154600160a060020a0316141561056b5761055f565b6002865410156105a157610231565b93505b6001949094019361050f565b8585815481101561000257600091825260209091200154600160a060020a0316925061055c838c5b60006000600061091661014b565b600094505b8554851015610231578a600160a060020a03168686815481101561000257600091825260209091200154600160a060020a0316141561061157858654600188548801030681548110156100025760206000200154600160a060020a0316935061061d9050838c610593565b600194909401936105a6565b93506106276102a0565b6000141561063d5761063d5b600061095c6102a0565b610231836106496102a0565b600060008260001415610b6857610b68610115565b600092505b5050919050565b600091505b60035482101561065e57600380548381036000190190811015610002576000919091527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b015490508381116106c657809250610663565b6001919091019061066f565b905061014f565b600091505b5090565b60038054600019810190811015610002576000919091527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b01549050438111156106d9578091506106de565b806107455750610745336107406102a0565b610133565b905061018b565b600092505b505092915050565b60008481526004602052604081208054909350141561077b5760009250610751565b5060005b815481101561074c5784600160a060020a03168282815481101561000257600091825260209091200154600160a060020a031614156107c15760019250610751565b60010161077f565b156107d65750600061018b565b6107de6102a0565b6000141580156107f957506101006107f46102a0565b034310155b156108065750600061018b565b61080e61014b565b600160a060020a03831660009081526002602052604090205410156108355750600061018b565b50600161018b565b151561084b5750600061018b565b6108536102a0565b600014610835576101006108656102a0565b0343106108745750600061018b565b610880826107406102a0565b15156108355750600061018b565b156103155761089b6102a0565b600014156108ab576108ab610633565b610315336108b76102a0565b60008160001415610b1557610b15610115565b15610315576108d76102a0565b600014156108e7576108e7610633565b610315336106496102a0565b600160a060020a0382166000908152600260205260409020805482900390555050565b600160a060020a038616600090815260026020526040902054909250905080821115610940579050805b61094a85836103c9565b61095484836100ef565b819250610751565b60001461096b5761096b610115565b5061020043016004600061097d610242565b815260208181019290925260409081016000908120848252600484529181208254815481835582845294909220909381019282156109dc5760005260206000209182015b828111156109dc5782548255916001019190600101906109c1565b50610a029291505b808211156106de578054600160a060020a03191681556001016109e4565b5050610a4f8160008181526004602052604081209080805b8354811015610c9a578354604080514340815260208101849052815190819003909101902006925082811415610ca157610d4a565b6003805460018101808355919082908015829011610a9057818360005260206000209182019101610a9091905b808211156106de5760008155600101610a7c565b505060038054849350909150600019810190811015610002575080546000919091527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85a015550565b50505050828160018354038154811015610002575050815460008381526020902001600019018054600160a060020a03191690911790555b505050565b610b1f8383610133565b15610b2957610b10565b50600081815260046020526040902080546001810180835590829082908015829011610ad857818360005260206000209182019101610ad89190610a7c565b610b728484610133565b1515610b7d57610c8c565b6000838152600460205260409020805490925060011415610bc75760008281815481835581811511610bc257818360005260206000209182019101610bc29190610a7c565b505050505b5060005b8154811015610c8c5783600160a060020a03168282815481101561000257600091825260209091200154600160a060020a03161415610c9257816001835403815481101561000257906000526020600020900160009054906101000a9004600160a060020a031682828154811015610002576020600020018054600160a060020a031916909217909155508154600019810180845590839082908015829011610c8757818360005260206000209182019101610c879190610a7c565b505050505b50505050565b600101610bcb565b5050505050565b8381815481101561000257508054600082815260209020830154600160a060020a03169350849081101561000257906000526020600020900160009054906101000a9004600160a060020a0316848281548110156100025750602060002083018054600160a060020a03191690921790915550835482908590859081101561000257906000526020600020900160006101000a815481600160a060020a03021916908302179055505b600101610a1a56
+
+======= CallerPool =======
+Binary: 
+606060405260008054600160a060020a0319908116331780835560018054909216600160a060020a03909116179055610d5290819061003e90396000f300606060405236156100e55760e060020a600035046319f74e1f811461012957806323306ed614610147578063299179541461015257806350a3bd391461015e5780635ae348681461016a5780636595f73a14610175578063741b3c391461019057806384c92c9a146101985780638dd5e298146101ad578063910789c4146101bf5780639d12f0f5146101fc578063a6814e8e1461023e578063aec918c71461024d578063b010d94a1461026d578063bc966ddc14610282578063c3daab961461028d578063c4afc3fb1461029c578063c861cd66146102b7578063e8543d0d146102cf575b6103135b61031533345b600160a060020a0382166000908152600260205260409020548082011015610346576103465b600080600181548110156100025750508052565b6103176004356024355b600060006000836000141561075957610751565b6103175b3a45025b90565b6103136108ca33610274565b61031361088e336101b4565b61031761020061014f565b6103176004356000818152600460205260409020545b919050565b6103136100e9565b6103176004355b600061072e33610740610242565b6103176004355b60006107c98261019f565b61031760043560038054829081101561000257506000527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b015481565b61031360043560243560443560643560008054819081908190819081908190600160a060020a039081163391909116146104cc575b5050505050505050505050565b6103175b60006106d243610254565b6103176004355b6000600060006003600050546000141561066a57610663565b6103176004355b600061083d82610740610242565b61031761010061014f565b6103136004356103683361019f565b6103175b60006000600360005054600014156106e2576106de565b61031760043560026020526000908152604090205481565b610329600435602435604435606435600060006000600060006000888710806102fc57508760ff16890187115b1561044357600095505b5050505050949350505050565b005b565b60408051918252519081900360200190f35b60408051600160a060020a03929092168252519081900360200190f35b600160a060020a03821660009081526002602052604090208054820190555050565b156103c357600160a060020a03331660009081526002602052604090205481111561039557610395610115565b61039d61014b565b600160a060020a03331660009081526002602052604090205482900310156103c3575b50565b6103f133825b600160a060020a0382166000908152600260205260409020548111156108f3576108f3610115565b604051600160a060020a03331690600090839082818181858883f1935050505015156103c05733600160a060020a03165a60405183906000818181858888f1935050505015156103c0576103c0610115565b61044c89610254565b945084600014156104605760009550610306565b6000858152600460208190526040909120945060ff89811682900416935089880304915060028201839011156104995760009550610306565b508254808a069084908284018190069081101561000257600091825260209091200154600160a060020a03169550610306565b6104d589610254565b600081815260046020819052604090912091985090965060ff898116829004169250438a9003049050600281018290111561054d57600094505b8554851015610231578a600160a060020a03168686815481101561000257600091825260209091200154600160a060020a0316141561056b5761055f565b6002865410156105a157610231565b93505b6001949094019361050f565b8585815481101561000257600091825260209091200154600160a060020a0316925061055c838c5b60006000600061091661014b565b600094505b8554851015610231578a600160a060020a03168686815481101561000257600091825260209091200154600160a060020a0316141561061157858654600188548801030681548110156100025760206000200154600160a060020a0316935061061d9050838c610593565b600194909401936105a6565b93506106276102a0565b6000141561063d5761063d5b600061095c6102a0565b610231836106496102a0565b600060008260001415610b6857610b68610115565b600092505b5050919050565b600091505b60035482101561065e57600380548381036000190190811015610002576000919091527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b015490508381116106c657809250610663565b6001919091019061066f565b905061014f565b600091505b5090565b60038054600019810190811015610002576000919091527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b01549050438111156106d9578091506106de565b806107455750610745336107406102a0565b610133565b905061018b565b600092505b505092915050565b60008481526004602052604081208054909350141561077b5760009250610751565b5060005b815481101561074c5784600160a060020a03168282815481101561000257600091825260209091200154600160a060020a031614156107c15760019250610751565b60010161077f565b156107d65750600061018b565b6107de6102a0565b6000141580156107f957506101006107f46102a0565b034310155b156108065750600061018b565b61080e61014b565b600160a060020a03831660009081526002602052604090205410156108355750600061018b565b50600161018b565b151561084b5750600061018b565b6108536102a0565b600014610835576101006108656102a0565b0343106108745750600061018b565b610880826107406102a0565b15156108355750600061018b565b156103155761089b6102a0565b600014156108ab576108ab610633565b610315336108b76102a0565b60008160001415610b1557610b15610115565b15610315576108d76102a0565b600014156108e7576108e7610633565b610315336106496102a0565b600160a060020a0382166000908152600260205260409020805482900390555050565b600160a060020a038616600090815260026020526040902054909250905080821115610940579050805b61094a85836103c9565b61095484836100ef565b819250610751565b60001461096b5761096b610115565b5061020043016004600061097d610242565b815260208181019290925260409081016000908120848252600484529181208254815481835582845294909220909381019282156109dc5760005260206000209182015b828111156109dc5782548255916001019190600101906109c1565b50610a029291505b808211156106de578054600160a060020a03191681556001016109e4565b5050610a4f8160008181526004602052604081209080805b8354811015610c9a578354604080514340815260208101849052815190819003909101902006925082811415610ca157610d4a565b6003805460018101808355919082908015829011610a9057818360005260206000209182019101610a9091905b808211156106de5760008155600101610a7c565b505060038054849350909150600019810190811015610002575080546000919091527fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85a015550565b50505050828160018354038154811015610002575050815460008381526020902001600019018054600160a060020a03191690911790555b505050565b610b1f8383610133565b15610b2957610b10565b50600081815260046020526040902080546001810180835590829082908015829011610ad857818360005260206000209182019101610ad89190610a7c565b610b728484610133565b1515610b7d57610c8c565b6000838152600460205260409020805490925060011415610bc75760008281815481835581811511610bc257818360005260206000209182019101610bc29190610a7c565b505050505b5060005b8154811015610c8c5783600160a060020a03168282815481101561000257600091825260209091200154600160a060020a03161415610c9257816001835403815481101561000257906000526020600020900160009054906101000a9004600160a060020a031682828154811015610002576020600020018054600160a060020a031916909217909155508154600019810180845590839082908015829011610c8757818360005260206000209182019101610c879190610a7c565b505050505b50505050565b600101610bcb565b5050505050565b8381815481101561000257508054600082815260209020830154600160a060020a03169350849081101561000257906000526020600020900160009054906101000a9004600160a060020a0316848281548110156100025750602060002083018054600160a060020a03191690921790915550835482908590859081101561000257906000526020600020900160006101000a815481600160a060020a03021916908302179055505b600101610a1a56
+
+======= CallerPoolAlarmAPI =======
+Binary: 
+
+
+======= Relay =======
+Binary: 
+606060405260008054600160a060020a0319163317905561014a806100256000396000f300606060405260e060020a6000350463e8b1d0f3811461001b575b005b60806020601f6044356004818101359283018490049093028401604052606082815261009e949335936024803594606494909101918190838280828437509495505050505050600080543373ffffffffffffffffffffffffffffffffffffffff9081169116146100b0576100b06000806001815481101561000257505080805250565b60408051918252519081900360200190f35b8373ffffffffffffffffffffffffffffffffffffffff168360e060020a9004836040518260e060020a028152600401808280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156101295780820380516001836020036101000a031916815260200191505b509150506000604051808303816000876161da5a03f197965050505050505056
         </code></pre>
     </div>
 </div>
