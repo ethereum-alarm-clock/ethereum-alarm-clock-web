@@ -17,6 +17,10 @@ urlpatterns = patterns(
         r'^source/$', TemplateView.as_view(template_name='source.html'),
         name="source-code",
     ),
+    url(
+        r'^bug-bounty/$', TemplateView.as_view(template_name='bug_bounty.html'),
+        name="bug-bounty",
+    ),
 )
 
 
