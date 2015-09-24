@@ -4,7 +4,10 @@ from __future__ import unicode_literals
 from django.conf import settings
 from django.conf.urls import patterns, include, url
 from django.conf.urls.static import static
-from django.views.generic import TemplateView
+from django.views.generic import (
+    TemplateView,
+    RedirectView,
+)
 
 
 urlpatterns = patterns(
@@ -14,8 +17,16 @@ urlpatterns = patterns(
         name="site-index",
     ),
     url(
-        r'^source/$', TemplateView.as_view(template_name='source.html'),
-        name="source-code",
+        r'^source/$', RedirectView.as_view(pattern_name='source-v020'),
+        name="source-latest",
+    ),
+    url(
+        r'^source/v0\.2\.0/$', TemplateView.as_view(template_name='source-v0.2.0.html'),
+        name="source-v020",
+    ),
+    url(
+        r'^source/v0\.1\.0/$', TemplateView.as_view(template_name='source-v0.1.0.html'),
+        name="source-v010",
     ),
     url(
         r'^bug-bounty/$', TemplateView.as_view(template_name='bug_bounty.html'),

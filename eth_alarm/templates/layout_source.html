@@ -1,0 +1,41 @@
+{% extends "layout_wide.html" %}
+
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        {% block navigation %}
+            <ul class="nav nav-tabs">
+                <li role="presentation" class="{% block tab_020_class %}{% endblock %}"><a href="{% url 'source-v020' %}">0.2.0 (latest)</a></li>
+                <li role="presentation" class="{% block tab_010_class %}{% endblock %}"><a href="{% url 'source-v010' %}">0.1.1</a></li>
+            </ul>
+        {% endblock %}
+    </div>
+</div>
+
+<div class="row contract-address">
+    <div class="col-md-8 col-md-offset-2">
+        <h2>Alarm Contract Address</h2>
+        <code>{% block contract_address %}{% endblock %}</code>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8 col-md-offset-2">
+        {% block instructions %}
+        {% endblock %}
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <h2 id="source-code">Source Code</h2>
+        <pre class="alarm-source-code"><code class="language-solidity">{% block contract_source %}{% endblock %}</code></pre>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <h2 id="source-binary">Compiled Binary</h2>
+        <pre class="alarm-binary-code"><code class="language-bash">{% block contract_binary %}{% endblock %}</code></pre>
+    </div>
+</div>
+{% endblock %}
