@@ -2,7 +2,7 @@
 
 {% block tab_040_class %}active{% endblock %}
 
-{% block contract_address %}TODO{% endblock %}
+{% block contract_address %}0x07307d0b136a79bac718f43388aed706389c4588{% endblock %}
 
 {% block instructions %}
     <div class="page-header">
@@ -44,8 +44,6 @@ Version: 0.1.6-d41f8b7c/Release-Darwin/clang/JIT linked to libethereum-1.1.0-83b
     above to get the compiled binary.</p>
 
     <pre><code class="language-bash">$ solc --bin --bin-runtime --optimize contracts/Alarm.sol libraries/* | solce --link --libraries AccountingLib:0x7de615d8a51746a9f10f72a593fb5b3718dc3d52,GroveLib:0x920c890a90db8fba7604864b0cf38ee667331323,ScheduledCallLib:0x5c3623dcef2d5168dbe3e8cc538788cd8912d898,StringLib:0x443b53559d337277373171280ec57029718203fb,ResourcePoolLib:0xd6bbd16eaa6ea3f71a458bffc64c0ca24fc8c58e</code></pre>
-
-    <!-- BREAK HERE -->
 
     <p>To verify the source you check that the runtime bytecode associated with
     each of contract address equals the runtime binary output from the solc

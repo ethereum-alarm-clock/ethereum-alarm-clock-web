@@ -17,8 +17,12 @@ urlpatterns = patterns(
         name="site-index",
     ),
     url(
-        r'^source/$', RedirectView.as_view(pattern_name='source-v040'),
+        r'^source/$', RedirectView.as_view(pattern_name='source-v050', permanent=False),
         name="source-latest",
+    ),
+    url(
+        r'^source/v0\.5\.0/$', TemplateView.as_view(template_name='source-v0.5.0.html'),
+        name="source-v050",
     ),
     url(
         r'^source/v0\.4\.0/$', TemplateView.as_view(template_name='source-v0.4.0.html'),
