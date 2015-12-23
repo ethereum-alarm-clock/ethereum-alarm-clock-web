@@ -2,7 +2,7 @@
 from __future__ import unicode_literals
 
 from django.conf import settings
-from django.conf.urls import patterns, include, url
+from django.conf.urls import patterns, url
 from django.conf.urls.static import static
 from django.views.generic import (
     TemplateView,
@@ -17,8 +17,12 @@ urlpatterns = patterns(
         name="site-index",
     ),
     url(
-        r'^source/$', RedirectView.as_view(pattern_name='source-v050', permanent=False),
+        r'^source/$', RedirectView.as_view(pattern_name='source-v060', permanent=False),
         name="source-latest",
+    ),
+    url(
+        r'^source/v0\.6\.0/$', TemplateView.as_view(template_name='source-v0.6.0.html'),
+        name="source-v060",
     ),
     url(
         r'^source/v0\.5\.0/$', TemplateView.as_view(template_name='source-v0.5.0.html'),
